@@ -1,0 +1,320 @@
+openapi: 3.0.3
+info:
+  title: Elixir Marketplace API
+  description: Unified API for vendor-based marketplace integrations (ecom and voucher)
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000/api
+
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /marketplace/products:
+    post:
+      summary: Fetch products from a vendor
+      parameters:
+        - in: query
+          name: vendor
+          required: true
+          schema:
+            type: string
+            enum: [ecom, voucher]
+          description: Vendor type (ecom or voucher)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  example: telma
+                filters:
+                  type: object
+                  example:
+                    rx_required: true
+                    type: drug
+      responses:
+        '200':
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /marketplace/validate-inventory:
+    post:
+      summary: Validate inventory before placing order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vendor, items]
+              properties:
+                vendor:
+                  type: string
+                  enum: [ecom, voucher]
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [sku, quantity]
+                    properties:
+                      sku:
+                        type: string
+                      quantity:
+                        type: integer
+      responses:
+        '200':
+          description: Inventory validated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /marketplace/order:
+    post:
+      summary: Place order with one or more vendors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderRequest'
+      responses:
+        '200':
+          description: Order placed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        sku:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [drug, otc]
+        image:
+          type: string
+        label:
+          type: string
+        prices:
+          type: object
+          properties:
+            mrp:
+              type: string
+            discount:
+              type: string
+              nullable: true
+            discounted_price:
+              type: string
+              nullable: true
+        rx_required:
+          type: boolean
+        available_quantity:
+          type: number
+        unit_price:
+          type: number
+        offered_price:
+          type: number
+
+    InventoryValidationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  sku:
+                    type: string
+                  availableQty:
+                    type: number
+                  price:
+                    type: number
+                  discountedPrice:
+                    type: number
+                    nullable: true
+            payableAmount:
+              type: number
+            vasCharges:
+              type: number
+
+    OrderRequest:
+      type: object
+      required: [address, items]
+      properties:
+        address:
+          type: object
+          required: [lat, lng]
+          properties:
+            lat:
+              type: number
+              example: 28.61
+            lng:
+              type: number
+              example: 77.23
+        items:
+          type: array
+          items:
+            type: object
+            required: [sku, quantity, vendor]
+            properties:
+              sku:
+                type: string
+              quantity:
+                type: number
+              vendor:
+                type: string
+                enum: [ecom, voucher]
+
+    OrderResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            orderId:
+              type: string
+            orders:
+              type: array
+              items:
+                type: object
+                properties:
+                  vendor_orderId:
+                    type: string
+                  vendor:
+                    type: string
+                    enum: [ecom, voucher]
+                  status:
+                    type: string
+                    enum: [CONFIRMED, FAILED]
+                  meta:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            product:
+                              type: string
+                            voucherNumber:
+                              type: string
+                            voucherCode:
+                              type: string
+                            value:
+                              type: number
+                            orderId:
+                              type: string
+                            status:
+                              type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request or missing fields
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: false
+              message:
+                type: string
+                example: Invalid request: missing items or address
+
+    RateLimitExceeded:
+      description: Too many requests - rate limited
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: false
+              message:
+                type: string
+                example: Too many requests, please try again later.
+
+    NotFound:
+      description: The requested route does not exist
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              message:
+                type: string
