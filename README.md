@@ -191,5 +191,5 @@ Available at:
 
 ## 👨‍💻 Author
 
-**Your Name**  
+**Amardeep**  
 [GitHub](https://github.com/Amardeep23)
